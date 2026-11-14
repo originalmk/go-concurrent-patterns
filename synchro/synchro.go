@@ -21,7 +21,6 @@ func secondInvalid() {
 	var a string
 	var done bool
 	var once sync.Once
-
 	setup := func() {
 		a = "hello"
 		done = true

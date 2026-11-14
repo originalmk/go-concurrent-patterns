@@ -1,4 +1,7 @@
-.PHONY: build
+.PHONY: valid invalid
 
-build:
-	go test -v ./... -race
+valid:
+	go test ./... -tags validonly -race -count 1000
+
+invalid:
+	go test ./... -race -count 1000
