@@ -82,4 +82,7 @@ func main() {
 	t2.Left.Left.Right.Value = 42
 	fmt.Println(Same(t1, t2))
 
+	for n := range t1.Nodes() {
+		fmt.Println(n)
+	}
 }
