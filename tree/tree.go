@@ -1,7 +1,5 @@
 package main
 
-import "fmt"
-
 type Tree struct {
 	Left  *Tree
 	Value int
@@ -47,42 +45,4 @@ func Same(t1, t2 *Tree) bool {
 	for range ch2 {
 	}
 	return result
-}
-
-func main() {
-	t1 := &Tree{
-		Value: 3,
-		Left: &Tree{
-			Value: 1,
-			Left:  &Tree{Value: 1},
-			Right: &Tree{Value: 2},
-		},
-		Right: &Tree{
-			Value: 8,
-			Left:  &Tree{Value: 5},
-			Right: &Tree{Value: 13},
-		},
-	}
-
-	t2 := &Tree{
-		Value: 8,
-		Left: &Tree{
-			Value: 3,
-			Left: &Tree{
-				Value: 1,
-				Left:  &Tree{Value: 1},
-				Right: &Tree{Value: 2},
-			},
-			Right: &Tree{Value: 5},
-		},
-		Right: &Tree{Value: 13},
-	}
-
-	fmt.Println(Same(t1, t2))
-	t2.Left.Left.Right.Value = 42
-	fmt.Println(Same(t1, t2))
-
-	for n := range t1.Nodes() {
-		fmt.Println(n)
-	}
 }
