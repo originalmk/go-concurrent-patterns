@@ -24,5 +24,27 @@ func TestDeadline(t *testing.T) {
 		case <-time.After(time.Second*5 + time.Nanosecond):
 			t.Fatal("context did not get canceled after deadline")
 		}
+		err := ctx.Err()
+		if err != DeadlineExceeded {
+			t.Fatal("expected to get deadline exceeded error")
+		}
 	})
+}
+
+func TestErrBackground(t *testing.T) {
+	ctx := Background()
+	err := ctx.Err()
+	if err != nil {
+		t.Fatal("expected error to be nil")
+	}
+}
+
+func TestErrCancel(t *testing.T) {
+	ctx, cancel := WithCancel(Background())
+	cancel()
+	err := ctx.Err()
+	if err != Canceled {
+		t.Fatal("expected error to be canceled")
+	}
+
 }
