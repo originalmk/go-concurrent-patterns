@@ -14,12 +14,25 @@ func (mkctx MkContext) Done() <-chan struct{} {
 }
 
 func Background() MkContext {
-	return MkContext{
-		done: make(chan struct{}),
-	}
+	ctx, _ := makeContext(nil, nil)
+	return ctx
 }
 
 func WithCancel(parent MkContext) (mkctx MkContext, cancel CancelFunc) {
+	return makeContext(&parent, nil)
+}
+
+func WithDeadline(parent MkContext, deadline time.Time) (mkctx MkContext, cancel CancelFunc) {
+	return makeContext(&parent, &deadline)
+}
+
+func makeContext(parent *MkContext, deadline *time.Time) (mkctx MkContext, cancel CancelFunc) {
+	if parent == nil && deadline == nil {
+		return MkContext{
+			done: make(chan struct{}),
+		}, func() {}
+	}
+
 	mkctx = Background()
 	c := make(chan struct{})
 	var o sync.Once
@@ -29,24 +42,21 @@ func WithCancel(parent MkContext) (mkctx MkContext, cancel CancelFunc) {
 			<-mkctx.done
 		})
 	}
+	var pch chan struct{}
+	if parent != nil {
+		pch = parent.done
+	}
+	var dch <-chan time.Time
+	if deadline != nil {
+		dch = time.After(time.Until(*deadline))
+	}
 	go func() {
 		select {
 		case <-c:
-		case <-parent.done:
+		case <-pch:
+		case <-dch:
 		}
 		close(mkctx.done)
-	}()
-	return
-}
-
-func WithDeadline(parent MkContext, deadline time.Time) (mkctx MkContext, cancel CancelFunc) {
-	mkctx, cancel = WithCancel(parent)
-	go func() {
-		select {
-		case <-mkctx.done:
-		case <-time.After(time.Until(deadline)):
-			cancel()
-		}
 	}()
 	return
 }
