@@ -1,6 +1,7 @@
 package mkcontext
 
 import (
+	"errors"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -47,4 +48,22 @@ func TestErrCancel(t *testing.T) {
 		t.Fatal("expected error to be canceled")
 	}
 
+}
+
+func TestCause(t *testing.T) {
+	helloErr := errors.New("Hello")
+	ctxa, cancelCause := WithCancelCause(Background())
+	ctxb, cancel := WithCancel(ctxa)
+	defer cancel()
+	cancelCause(helloErr)
+	<-ctxa.Done()
+	err := Cause(ctxa)
+	if err != helloErr {
+		t.Fatal("expected to get hello error as cause")
+	}
+	<-ctxb.Done()
+	err = Cause(ctxb)
+	if err != helloErr {
+		t.Fatalf("expected to get hello error as cause, got %s", err)
+	}
 }
