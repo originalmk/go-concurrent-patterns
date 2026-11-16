@@ -4,17 +4,27 @@ import (
 	"errors"
 	"sync"
 	"time"
+
+	"krzyzanowski.dev/goconctrain/unboundedchan"
 )
 
 var DeadlineExceeded = errors.New("deadline exceeded")
 var Canceled = errors.New("canceled")
 
+type afterDef struct {
+	mu          sync.Mutex
+	f           func()
+	aborted     bool
+	startedExec bool
+}
+
 type MkContext struct {
-	done     chan struct{}
-	err      error
-	errchan  chan error
-	erronce  sync.Once
-	causeErr error
+	done       chan struct{}
+	err        error
+	errchan    chan error
+	erronce    sync.Once
+	causeErr   error
+	aftersSend chan<- *afterDef
 }
 
 type CancelFunc func()
@@ -50,7 +60,8 @@ func (mkctx *MkContext) cause() error {
 }
 
 func Background() *MkContext {
-	ctx, _ := makeContext(nil, nil)
+	ctx, cancel := makeContext(nil, nil)
+	cancel(nil)
 	return ctx
 }
 
@@ -77,8 +88,9 @@ func makeContext(parent *MkContext, deadline *time.Time) (mkctx *MkContext, canc
 			errchan: make(chan error, 1),
 		}, func(error) {}
 	}
-
 	mkctx = Background()
+	aftersRecv, aftersSend, aftersStop := unboundedchan.NewUnboundedChan[*afterDef]()
+	mkctx.aftersSend = aftersSend
 	causeChan := make(chan error, 1)
 	var o sync.Once
 	cancel = func(cause error) {
@@ -97,6 +109,7 @@ func makeContext(parent *MkContext, deadline *time.Time) (mkctx *MkContext, canc
 	}
 	go func() {
 		defer close(mkctx.done)
+		defer aftersStop(true)
 		select {
 		case cause := <-causeChan:
 			if cause == nil {
@@ -112,6 +125,19 @@ func makeContext(parent *MkContext, deadline *time.Time) (mkctx *MkContext, canc
 			mkctx.causeErr = DeadlineExceeded
 			mkctx.errchan <- DeadlineExceeded
 		}
+		// We stop receiving new after funcs. The user needs to select together with
+		// mkctx.done to handle this properly.
+		aftersStop(false)
+		for afterDef := range aftersRecv {
+			afterDef.mu.Lock()
+			if afterDef.aborted {
+				afterDef.mu.Unlock()
+				continue
+			}
+			afterDef.startedExec = true
+			afterDef.mu.Unlock()
+			go afterDef.f()
+		}
 	}()
 	return
 }
@@ -123,4 +149,29 @@ func Cause(ctx *MkContext) error {
 	default:
 		return nil
 	}
+}
+
+func AfterFunc(ctx *MkContext, f func()) (stop func() bool) {
+	// This is case for Background(). We just never execute the AfterFunc then.
+	if ctx.aftersSend == nil {
+		return func() bool { return true }
+	}
+	def := &afterDef{f: f}
+	select {
+	case ctx.aftersSend <- def:
+		stop = func() bool {
+			def.mu.Lock()
+			defer def.mu.Unlock()
+			if def.startedExec {
+				return false
+			} else {
+				def.aborted = true
+				return true
+			}
+		}
+	case <-ctx.done:
+		go f()
+		stop = func() bool { return false }
+	}
+	return
 }

@@ -67,3 +67,33 @@ func TestCause(t *testing.T) {
 		t.Fatalf("expected to get hello error as cause, got %s", err)
 	}
 }
+
+func TestAfterFuncStopped(t *testing.T) {
+	ctx, cancel := WithCancel(Background())
+	stop := AfterFunc(ctx, func() {
+		t.Error("expected AfterFunc to not be executed")
+	})
+	stopped := stop()
+	cancel()
+	<-ctx.Done()
+	if !stopped {
+		t.Error("expected AfterFunc to be stopped")
+	}
+}
+
+func TestAfterFuncNotStopped(t *testing.T) {
+	ch := make(chan bool)
+	ctx, cancel := WithCancel(Background())
+	stop := AfterFunc(ctx, func() {
+		ch <- true
+		ch <- true
+	})
+	cancel()
+	<-ctx.Done()
+	<-ch
+	stopped := stop()
+	<-ch
+	if stopped {
+		t.Error("expected AfterFunc to not be stopped")
+	}
+}
