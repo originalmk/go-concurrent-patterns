@@ -1,13 +1,14 @@
-package main
+package unboundedchan
 
 import (
 	"context"
-	"fmt"
 	"slices"
 	"sync"
 )
 
-func NewUnboundedChan[T any]() (recv <-chan T, send chan<- T, stop func()) {
+// Call stop(true) to hard-stop or stop(false) to be able to get remaining messages.
+// If you call stop(false), you still need to call stop(true).
+func NewUnboundedChan[T any]() (recv <-chan T, send chan<- T, stop func(bool)) {
 	buf := make([]T, 0)
 	r := make(chan T)
 	send = r
@@ -15,9 +16,14 @@ func NewUnboundedChan[T any]() (recv <-chan T, send chan<- T, stop func()) {
 	recv = s
 	ctx, cancel := context.WithCancel(context.Background())
 	var wg sync.WaitGroup
-	stop = func() {
-		cancel()
-		wg.Wait()
+	softclose := make(chan struct{})
+	stop = func(hard bool) {
+		if hard {
+			cancel()
+			wg.Wait()
+		} else {
+			close(softclose)
+		}
 	}
 	needsNewCandidate := true
 	wg.Go(func() {
@@ -50,25 +56,16 @@ func NewUnboundedChan[T any]() (recv <-chan T, send chan<- T, stop func()) {
 					break
 				}
 				buf = append(buf, v)
+			case <-softclose:
+				curRecv = nil
 			case curSend <- toSend:
 				needsNewCandidate = true
 				curSend = nil
 			case <-ctx.Done():
+				close(s)
 				return
 			}
 		}
 	})
 	return
-}
-
-func main() {
-	r, w, stop := NewUnboundedChan[int]()
-	defer stop()
-	for i := range 10 {
-		w <- i
-	}
-	close(w)
-	for i := range r {
-		fmt.Println(i)
-	}
 }
