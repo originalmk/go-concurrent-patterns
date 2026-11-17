@@ -34,7 +34,7 @@ func testSequential(t *testing.T, fl flighter) {
 	v1, err1, shared1 := fl.Do("t1", func() (any, error) {
 		return 0, nil
 	})
-	v2, err2, shared2 := fl.Do("t2", func() (any, error) {
+	v2, err2, shared2 := fl.Do("t1", func() (any, error) {
 		return 0, nil
 	})
 	if v1 != 0 || v2 != 0 {

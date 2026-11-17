@@ -36,6 +36,9 @@ func (g *Group) Do(key string, f func() (any, error)) (any, error, bool) {
 			for _, waiter := range g.waiters[key] {
 				waiter <- result{a, err, shared}
 			}
+			delete(g.waiters, key)
+			delete(g.jobs, key)
+
 		}()
 	}
 
