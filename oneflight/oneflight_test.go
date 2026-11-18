@@ -4,13 +4,13 @@ import (
 	"sync"
 	"testing"
 	"testing/synctest"
-	"time"
 
 	"golang.org/x/sync/singleflight"
 )
 
 type flighter interface {
 	Do(key string, f func() (any, error)) (any, error, bool)
+	Forget(key string)
 }
 
 func TestSingleflight(t *testing.T) {
@@ -26,7 +26,10 @@ func testImpl(t *testing.T, cons func() flighter) {
 		testSequential(t, cons())
 	})
 	t.Run("shared", func(t *testing.T) {
-		testShared(t, cons())
+		testShared(t, cons(), false)
+	})
+	t.Run("forget", func(t *testing.T) {
+		testShared(t, cons(), true)
 	})
 }
 
@@ -48,39 +51,45 @@ func testSequential(t *testing.T, fl flighter) {
 	}
 }
 
-func testShared(t *testing.T, fl flighter) {
+func testShared(t *testing.T, fl flighter, forget bool) {
 	synctest.Test(t, func(t *testing.T) {
+		ch := make(chan struct{})
 		var wg sync.WaitGroup
+		defer wg.Wait()
 		wg.Go(func() {
-			v1, err1, shared1 := fl.Do("t1", func() (any, error) {
-				time.Sleep(time.Second + time.Nanosecond)
-				return 0, nil
+			v, err, shared := fl.Do("t1", func() (any, error) {
+				<-ch
+				return nil, nil
 			})
-			if v1 != 0 {
-				t.Error()
+			if v != nil {
+				t.Error(1)
 			}
-			if err1 != nil {
-				t.Error()
+			if err != nil {
+				t.Error(2)
 			}
-			if !shared1 {
-				t.Error()
+			if shared == forget {
+				t.Error(3)
 			}
 		})
+		synctest.Wait()
+		if forget {
+			fl.Forget("t1")
+		}
 		wg.Go(func() {
-			v2, err2, shared2 := fl.Do("t1", func() (any, error) {
-				time.Sleep(time.Second)
-				return 0, nil
+			v, err, shared := fl.Do("t1", func() (any, error) {
+				return nil, nil
 			})
-			if v2 != 0 {
-				t.Error()
+			if v != nil {
+				t.Error(4)
 			}
-			if err2 != nil {
-				t.Error()
+			if err != nil {
+				t.Error(5)
 			}
-			if !shared2 {
-				t.Error()
+			if shared == forget {
+				t.Error(6)
 			}
 		})
-		wg.Wait()
+		synctest.Wait()
+		close(ch)
 	})
 }

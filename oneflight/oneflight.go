@@ -1,11 +1,17 @@
 package oneflight
 
-import "sync"
+import (
+	"sync"
+)
 
 type Group struct {
-	mu      sync.Mutex
-	waiters map[string][]chan<- result
-	jobs    map[string]struct{}
+	mu   sync.Mutex
+	jobs map[string]*job
+}
+
+type job struct {
+	forgotten bool
+	waiters   []chan<- result
 }
 
 type result struct {
@@ -16,36 +22,50 @@ type result struct {
 
 func (g *Group) Do(key string, f func() (any, error)) (any, error, bool) {
 	g.mu.Lock()
+	g.ensureFields()
 
-	if g.waiters == nil {
-		g.waiters = make(map[string][]chan<- result)
-	}
-	if g.jobs == nil {
-		g.jobs = make(map[string]struct{})
-	}
-
-	_, ok := g.jobs[key]
-	if !ok {
-		g.jobs[key] = struct{}{}
-		g.waiters[key] = make([]chan<- result, 0)
+	j, ok := g.jobs[key]
+	if !ok || j.forgotten {
+		thisJob := &job{
+			waiters: make([]chan<- result, 0),
+		}
+		g.jobs[key] = thisJob
 		go func() {
 			a, err := f()
 			g.mu.Lock()
 			defer g.mu.Unlock()
-			shared := len(g.waiters[key]) > 1
-			for _, waiter := range g.waiters[key] {
+			shared := len(thisJob.waiters) > 1
+			for _, waiter := range thisJob.waiters {
 				waiter <- result{a, err, shared}
 			}
-			delete(g.waiters, key)
 			delete(g.jobs, key)
 
 		}()
 	}
 
 	waitCh := make(chan result)
-	g.waiters[key] = append(g.waiters[key], waitCh)
+	g.jobs[key].waiters = append(g.jobs[key].waiters, waitCh)
 	g.mu.Unlock()
 
 	res := <-waitCh
 	return res.res, res.err, res.shared
+}
+
+func (g *Group) Forget(key string) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.ensureFields()
+	j, ok := g.jobs[key]
+	if ok {
+		j.forgotten = true
+	}
+
+}
+
+// Make sure this is called with a lock.
+func (g *Group) ensureFields() {
+	if g.jobs == nil {
+		g.jobs = make(map[string]*job)
+	}
+
 }
