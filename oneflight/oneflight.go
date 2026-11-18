@@ -10,8 +10,7 @@ type Group struct {
 }
 
 type job struct {
-	forgotten bool
-	waiters   []chan<- result
+	waiters []chan<- result
 }
 
 type result struct {
@@ -24,8 +23,8 @@ func (g *Group) Do(key string, f func() (any, error)) (any, error, bool) {
 	g.mu.Lock()
 	g.ensureFields()
 
-	j, ok := g.jobs[key]
-	if !ok || j.forgotten {
+	_, ok := g.jobs[key]
+	if !ok {
 		thisJob := &job{
 			waiters: make([]chan<- result, 0),
 		}
@@ -55,11 +54,10 @@ func (g *Group) Forget(key string) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	g.ensureFields()
-	j, ok := g.jobs[key]
+	_, ok := g.jobs[key]
 	if ok {
-		j.forgotten = true
+		delete(g.jobs, key)
 	}
-
 }
 
 // Make sure this is called with a lock.
